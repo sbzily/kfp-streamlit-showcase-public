@@ -1,0 +1,119 @@
+import streamlit as st
+from src.utils.layout import apply_base_style
+
+ANNOTATED_ALERTS_FILE = """
+notification_channels:
+  email_oncall: data-platform-oncall@primeflix.com
+  slack_channel: "#data-platform-alerts"
+  # Start simple: define where alerts should go before debating the perfect tooling.
+
+alerts:
+  - name: daily-orders-pipeline-failed
+    source: vertex_pipeline
+    severity: critical
+    condition:
+      pipeline_name: daily-orders
+      states: [FAILED, CANCELLED]
+      # First alert: if the Vertex pipeline job fails outright, page the team.
+    notify: [email_oncall, slack_channel]
+    runbook: gs://vertex-pipelines-prod/runbooks/daily_orders_failure.md
+
+  - name: daily-orders-runtime-too-long
+    source: vertex_pipeline
+    severity: warning
+    condition:
+      pipeline_name: daily-orders
+      duration_minutes_gt: 45
+      # Second alert: catch slow runs before they turn into missed SLAs.
+    notify: [email_oncall]
+
+  - name: daily-orders-freshness-late
+    source: bigquery_check
+    severity: critical
+    sql: |
+      SELECT TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), MAX(updated_at), MINUTE) AS freshness_lag_minutes
+      FROM analytics.fct_orders
+      # Third alert: check the actual table, not only the pipeline status.
+    condition:
+      freshness_lag_minutes_gt: 180
+    notify: [email_oncall, slack_channel]
+
+  - name: daily-orders-row-count-drop
+    source: bigquery_check
+    severity: warning
+    sql: |
+      SELECT COUNT(*) AS row_count
+      FROM analytics.fct_orders
+      WHERE order_date = CURRENT_DATE() - 1
+      # Fourth alert: simple anomaly guardrail for suspiciously low output volume.
+    condition:
+      row_count_lt: 1000
+    notify: [email_oncall]
+"""
+
+st.set_page_config(
+    page_title='Monitoring & Alerting | Vertex AI Pipelines Explainer',
+    page_icon='🧩',
+    layout='wide',
+    initial_sidebar_state='expanded',
+)
+
+apply_base_style()
+
+st.title('Monitoring & Alerting')
+st.caption('Chapter 6: a suggested starting point for keeping daily_orders healthy')
+
+st.write(
+    'Now that your pipeline is running, the next responsibility is making sure you know when something goes wrong. '
+    'This page recommends a concrete set of alerts to start with, organized in a repo configuration file. '
+    'These alerts watch both the pipeline infrastructure and the quality of the data it produces.'
+)
+
+st.write(
+    'The recommended approach is to define your alerts in a YAML configuration file in your repo, making the monitoring contract explicit and reviewable. '
+    'This file captures what should alert, how severe each issue is, where notifications should go, and which runbook to reference when the alert fires. '
+    'Once defined, you can apply this configuration using infrastructure-as-code tools or scripts that integrate with Google Cloud Monitoring.'
+)
+
+st.write(
+    'Monitoring a data pipeline means watching two different things: the pipeline infrastructure itself and the data quality of what it produces. '
+    'The pipeline infrastructure alerts catch problems like failed jobs or runs that take too long. Data quality alerts catch problems like stale data or suspiciously low row counts that suggest something went wrong silently. '
+    'Both types are important because a successful pipeline run does not always mean good data came out.'
+)
+
+st.subheader('Suggested annotated `monitoring/alerts.yaml`')
+st.code(ANNOTATED_ALERTS_FILE.strip(), language='yaml')
+
+st.markdown(
+    """
+**Pipeline infrastructure alerts:** The first two alerts in the example watch the Vertex pipeline job itself. When `source: vertex_pipeline` is set, you're telling your monitoring system to watch Vertex's job status API [the service that reports whether your pipeline run succeeded, failed, or is still running]. The `daily-orders-pipeline-failed` alert fires immediately if the pipeline fails or is cancelled, which means something went structurally wrong like a missing dependency or a code error. The `daily-orders-runtime-too-long` alert is different: it fires when a pipeline run takes longer than expected (45 minutes in this example). This catches performance regressions before they cause downstream business issues like missed data deadlines.
+
+**Data quality alerts:** The last two alerts use `source: bigquery_check`, which means your monitoring system will execute SQL queries against your actual data tables. The `daily-orders-freshness-late` alert checks how old the newest row in your output table is. If the table hasn't been updated in the last three hours (180 minutes), it fires a critical alert because the data stakeholders are not getting fresh information. The `daily-orders-row-count-drop` alert runs a query to count yesterday's rows in your output table and fires if the count is suspiciously low (fewer than 1000 rows). This catches silent data quality issues where the pipeline technically succeeds but produces very little output, which might indicate a filter was applied incorrectly or upstream data was missing.
+
+**Routing and severity:** Each alert has a `severity` field (critical or warning) that helps you prioritize. Critical alerts should page an on-call engineer because they need immediate attention. Warning alerts can wait until business hours. The `notify` field makes the routing explicit instead of hidden in console settings, which means team members and new engineers can see exactly what channels get notified and participate in the decision if thresholds need to change.
+
+**Runbooks as documentation:** The `runbook` field points to a Markdown file that describes how to respond when the alert fires. Instead of having on-call engineers figure out troubleshooting steps from scratch, they have a documented procedure that outlines the most common root causes and recovery steps. Over time, as your team learns what works, the runbook becomes institutional knowledge that survives team turnover.
+
+**Keeping monitoring in version control:** By keeping this alert configuration in your repo alongside your code and pipeline definitions, monitoring thresholds become part of the reviewed, versioned deployment process. If someone wants to change when you alert on freshness, it goes through a pull request, gets reviewed, and is traceable back to a decision and a team member. This beats having thresholds silently lost in a console UI update.
+"""
+)
+
+st.write(
+    'To implement this for real, the next step would be choosing how to apply this configuration file: '
+    'you could use Terraform [an infrastructure-as-code tool that manages cloud resources] to automatically create Google Cloud Monitoring policies, '
+    'write a Python setup script that parses this YAML and calls the Monitoring API, or build a small internal tool that handles the translation. '
+    'The important part is that the monitoring contract is defined in your repo and can be reviewed and updated alongside your pipeline code.'
+)
+
+st.info(
+    '**Story checkpoint: Your monitoring strategy is now explicit and reviewable.** '
+    'You have defined alerts that watch for pipeline failures, slow runs, stale data, and suspicious output volumes. '
+    'Each alert has a severity level (critical for immediate response, warning for business hours), explicit routing (which channels get notified), and a runbook link that tells responders how to investigate and recover. '
+    'By keeping these definitions in your repo as `monitoring/alerts.yaml`, monitoring thresholds become part of your versioned, reviewed deployment process. '
+    'New team members can read the runbooks to understand the system. Your on-call engineers have a documented starting point when alerts fire.'
+)
+st.success(
+    '**Next: Conclusion (Chapter 7).** '
+    'You have now seen every major piece of the pipeline system: the repo structure, Cloud Build automation, Docker images, GCS storage, Vertex execution, and monitoring. '
+    'The final chapter ties everything together into a cohesive operating model and gives you practical next steps for building this yourself.'
+)
