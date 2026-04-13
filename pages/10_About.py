@@ -41,7 +41,7 @@ with col2:
     st.markdown('**Connect**')
     st.markdown(
         """
-[Muhammad on LinkedIn](https://linkedin.com/in/muhammadname)
+[Muhammad on LinkedIn](https://linkedin.com/in/muhammad-a-46402915a/)
 
 *Full Stack Data Scientist*
         
