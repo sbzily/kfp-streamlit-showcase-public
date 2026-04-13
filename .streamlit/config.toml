@@ -1,0 +1,14 @@
+[theme]
+base = "light"
+primaryColor = "#0f5fa8"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f2f6"
+textColor = "#0b1f44"
+font = "sans serif"
+
+[client]
+toolbarMode = "viewer"
+showErrorDetails = true
+
+[logger]
+level = "info"
